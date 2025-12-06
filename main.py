@@ -1,39 +1,81 @@
+from typing import List
+
 from pydantic import BaseModel
 
 from panoptic.core.plugin.plugin import APlugin
-from panoptic.models import Instance, ActionContext
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
+from panoptic.models import ActionContext, Instance
+
+from utils import (
+    MergeMapping,
+    ensure_merge_source_present,
+    get_instances_from_context,
+    mark_cluster_validated,
+    merge_metadata_for_instances,
+)
 
 
 class PluginParams(BaseModel):
     """
-    @default_text_prop: the default text prop that will be used for text+image similarity
-    @ocr_prop_name: the name of the prop that will be created after an ocr
+    @merge_source_field: metadata field carrying the source database label (e.g., "merge-source")
+    @merge_validated_flag: metadata field marking a cluster as validated for merge
+    @merge_mappings: list of mappings from source fields to the merged destination field(s)
     """
-    default_text_prop: str = "tweet_text"
 
-    ocr_prop_name: str = "ocr"
-  
-  
-class PluginExample(APlugin):  
-    def __init__(self, project: PluginProjectInterface, plugin_path: str, name: str):  
-        super().__init__(name=name,project=project, plugin_path=plugin_path)  
-        self.params = PluginParams()  
+    merge_source_field: str = "merge-source"
+    merge_validated_flag: str = "merge-validated"
+    merge_mappings: List[MergeMapping] = []
+    merge_source_missing_label: str = "[merge-source not provided]"
 
-        self.project.on_instance_import(self.compute_image_vector)
-        self.add_action_easy(self.create_clusters, ['group'])
-        self.add_action_easy(self.find_images, ['similar'])
-        self.add_action_easy(self.ocr, ['execute'])
-  
-    async def compute_image_vector(self, instance: Instance):  
-        pass
 
-    async def find_images(self, context: ActionContext):
-        pass
+class PanopticDatabasesMerger(APlugin):
+    """
+    Plugin to validate similar-image clusters and merge metadata across databases.
+    """
 
-    async def create_clusters(self, context: ActionContext):
-        pass
+    def __init__(self, project: PluginProjectInterface, plugin_path: str, name: str):
+        super().__init__(name=name, project=project, plugin_path=plugin_path)
+        self.params = PluginParams()
 
-    async def make_ocr(self, context: ActionContext):
-        pass
+        # Ensure every imported instance has a merge-source tag (or the default placeholder).
+        self.project.on_instance_import(self._on_instance_import)
+
+        # Actions shown in the UI.
+        self.add_action_easy(self.validate_cluster, ["group"])  # mark selected cluster as mergeable
+        self.add_action_easy(self.execute_metadata_merge, ["execute"])  # perform merge on selection
+
+    async def _on_instance_import(self, instance: Instance):
+        ensure_merge_source_present(
+            instance,
+            merge_source_field=self.params.merge_source_field,
+            missing_label=self.params.merge_source_missing_label,
+        )
+
+    async def validate_cluster(self, context: ActionContext):
+        """
+        Marks the selected cluster as validated for metadata merge.
+        """
+        instances = get_instances_from_context(context)
+        if not instances:
+            return
+
+        for inst in instances:
+            mark_cluster_validated(inst, flag_field=self.params.merge_validated_flag, flag_value=True)
+
+    async def execute_metadata_merge(self, context: ActionContext):
+        """
+        Executes metadata merge for the currently selected cluster (similar images).
+        Requires the cluster to be validated first.
+        """
+        instances = get_instances_from_context(context)
+        if not instances:
+            return
+
+        merge_metadata_for_instances(
+            instances,
+            mappings=self.params.merge_mappings,
+            merge_source_field=self.params.merge_source_field,
+            merge_validated_flag=self.params.merge_validated_flag,
+            missing_label=self.params.merge_source_missing_label,
+        )
 
