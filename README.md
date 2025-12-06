@@ -1,32 +1,26 @@
-# PanopticPlugin
+# Panoptic Databases Merger Plugin
 
-This is the readme for the default panoptic plugin.
-Installation and functions part NEED to be modified since they are fake examples.
-<br>
-If you're new to plugin developpment, refer to: https://github.com/CERES-Sorbonne/Panoptic/wiki/Plugin
-To get started, you can create a new repository by using this one as a template with the dedicated github button.
+Plugin to help merge metadata across similar images detected by [Panoptic](https://github.com/CERES-Sorbonne/Panoptic).
+It rides on top of Panoptic’s existing similar-image detection and clustering to guide validation and merge metadata coming from multiple databases.
+If you're new to plugin development, see https://github.com/CERES-Sorbonne/Panoptic/wiki/Plugin.
 
 # Summary
 
-This plugin is a panoptic plugin. [Panoptic](https://github.com/CERES-Sorbonne/Panoptic) is required before installing it. 
-It provides new functions to panoptic such as new embeddings, new clustering, text-image similarity, and OCR.
-<br>
-
+Panoptic handles detecting similar images and creating clusters. This plugin adds a guided workflow so you can validate clusters and merge metadata fields coming from different sources (e.g., different image databases).
 
 # Installation
 
-Copy the url of the git repository directly in panoptic in the add a plugin with git interface: the url should look like this: `https://github.com/{{username}}/{{repo_name}}`
+Copy the URL of the git repository directly in Panoptic via “add a plugin with git”; the URL should look like `https://github.com/{{username}}/{{repo_name}}`.
 
-# Functions
+# Usage Flow
 
-## Embeddings
-In addition to panoptic default CLIP embeddings, this plugin adds embeddings using ImageNet finetuned on historical archives.
+0) **Prepare source tagging**: ensure every image has a metadata field `merge-source` set to the name of the originating database.
+1) **Validate clusters**: for each Panoptic-created cluster, the UI lets you confirm whether the cluster truly contains images whose metadata should be merged.
+2) **Configure merging**: open the plugin configuration window and map source metadata names to a destination field (e.g., merge `Auteur` + `Author` → `Auteur fusionné`; add more pairs as needed).
+3) **Execute merge**: trigger “execute metadata merge” once mappings are set.
+4) **Merge behavior**: for every image inside validated “similar” clusters, all mapped metadata are copied into the destination field. Each value is suffixed with its `merge-source`, e.g., `Victor Hugo [source-1];Hugo Victor [source-2]` (if missing, it shows `[merge-source not provided]`).
 
-## Clusters
-In addition to panoptic default KMeans clustering, this plugins adds the possibility to use a DBScan algorithm.
+# Notes
 
-## Similarity
-Instead of using only image embedding similarity, this plugin offers to user image + text similarity. Note: since no parameters can be used in panoptic similarity system, you need to manually set in the plugin parameters the name of the property you want to use for text similarity.
-
-## Group Action
-This plugin adds an OCR function using TrOCR, you can trigger it on a group of image, it will create a new property containing the OCRized image text for each image.
+- Panoptic must be installed before adding this plugin.
+- Make sure `merge-source` is consistently populated; merge results include this label to preserve provenance.
