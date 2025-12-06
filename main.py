@@ -41,8 +41,12 @@ class PanopticDatabasesMerger(APlugin):
         self.project.on_instance_import(self._on_instance_import)
 
         # Actions shown in the UI.
-        self.add_action_easy(self.validate_cluster, ["group"])  # mark selected cluster as mergeable
-        self.add_action_easy(self.execute_metadata_merge, ["execute"])  # perform merge on selection
+        # Make the actions visible for several common selection contexts so they
+        # appear in the UI whether the user selects a group/cluster or a set
+        # of images. This helps in Panoptic installs where the action context
+        # string may differ between views.
+        self.add_action_easy(self.validate_cluster, ["group", "selection", "images"])  # mark selected cluster as mergeable
+        self.add_action_easy(self.execute_metadata_merge, ["execute", "selection", "images"])  # perform merge on selection
 
     async def _on_instance_import(self, instance: Instance):
         ensure_merge_source_present(
