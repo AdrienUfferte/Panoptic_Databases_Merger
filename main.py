@@ -43,7 +43,7 @@ class PanopticDatabasesMerger(APlugin):
         # runtime-only list of MergeMapping objects (not part of the BaseModel
         # to avoid core introspection issues). Plugins can set this via the
         # UI as a list of dicts that conform to MergeMapping at runtime.
-        self.params.merge_mappings = []
+        self.merge_mappings: list[MergeMapping] = []
 
         # Ensure every imported instance has a merge-source tag (or the default placeholder).
         self.project.on_instance_import(self._on_instance_import)
@@ -85,7 +85,7 @@ class PanopticDatabasesMerger(APlugin):
 
         merge_metadata_for_instances(
             instances,
-            mappings=self.params.merge_mappings,
+            mappings=self.merge_mappings,
             merge_source_field=self.params.merge_source_field,
             merge_validated_flag=self.params.merge_validated_flag,
             missing_label=self.params.merge_source_missing_label,
