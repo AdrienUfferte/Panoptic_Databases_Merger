@@ -6,7 +6,7 @@ from panoptic.core.plugin.plugin import APlugin
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
 from panoptic.models import ActionContext, Instance
 
-from utils import (
+from .utils import (
     MergeMapping,
     ensure_merge_source_present,
     get_instances_from_context,
@@ -24,7 +24,11 @@ class PluginParams(BaseModel):
 
     merge_source_field: str = "merge-source"
     merge_validated_flag: str = "merge-validated"
-    merge_mappings: List[MergeMapping] = []
+    # Note: `merge_mappings` contains a list of mappings describing how to
+    # merge metadata fields. We do NOT declare it as a typed field here to
+    # avoid exposing complex typing annotations to the Panoptic core (which
+    # introspects plugin BaseModel fields). The attribute is created at
+    # runtime in the plugin instance (`self.params.merge_mappings = []`).
     merge_source_missing_label: str = "[merge-source not provided]"
 
 
@@ -36,6 +40,10 @@ class PanopticDatabasesMerger(APlugin):
     def __init__(self, project: PluginProjectInterface, plugin_path: str, name: str):
         super().__init__(name=name, project=project, plugin_path=plugin_path)
         self.params = PluginParams()
+        # runtime-only list of MergeMapping objects (not part of the BaseModel
+        # to avoid core introspection issues). Plugins can set this via the
+        # UI as a list of dicts that conform to MergeMapping at runtime.
+        self.params.merge_mappings = []
 
         # Ensure every imported instance has a merge-source tag (or the default placeholder).
         self.project.on_instance_import(self._on_instance_import)
