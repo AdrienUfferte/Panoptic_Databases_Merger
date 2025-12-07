@@ -24,3 +24,11 @@ Copy the URL of the git repository directly in Panoptic via “add a plugin with
 
 - Panoptic must be installed before adding this plugin.
 - Make sure `merge-source` is consistently populated; merge results include this label to preserve provenance.
+
+# Example `merge_mappings_raw`
+
+Place the following JSON in the plugin settings field `merge_mappings_raw` to map multiple source fields into merged destination fields:
+
+```json
+[{"sources":["Author","Auteur"],"destination":"Auteur-merged"},{"sources":["Title","Titre"],"destination":"Titre-merged"},{"sources":["Copyright","Copyright (fr)"],"destination":"Copyright-merged"}]
+```
