@@ -19,19 +19,13 @@ class PluginParams(BaseModel):
     """
     @merge_source_field: metadata field carrying the source database label (e.g., "merge-source")
     @merge_validated_flag: metadata field marking a cluster as validated for merge
-    @merge_mappings: list of mappings from source fields to the merged destination field(s)
+    @merge_mappings_raw: JSON string containing the mappings to apply at merge time.
     """
 
     merge_source_field: str = "merge-source"
     merge_validated_flag: str = "merge-validated"
-    # Note: `merge_mappings` contains a list of mappings describing how to
-    # merge metadata fields. We do NOT declare it as a typed field here to
-    # avoid exposing complex typing annotations to the Panoptic core (which
-    # introspects plugin BaseModel fields). The attribute is created at
-    # runtime in the plugin instance (`self.params.merge_mappings = []`).
+    merge_mappings_raw: str = """[{"sources": ["Author", "Auteur"],"destination": "Auteur-merged"},{"sources": ["Title", "Titre"],"destination": "Titre-merged"},{"sources": ["Copyright", "Copyright (fr)"],"destination": "Copyright-merged"}]"""
     merge_source_missing_label: str = "[merge-source not provided]"
-    merge_mappings_raw: str = "[]"
-
 
 class PanopticDatabasesMerger(APlugin):
     """
