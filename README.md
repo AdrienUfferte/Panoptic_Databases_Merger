@@ -32,3 +32,13 @@ Place the following JSON in the plugin settings field `merge_mappings_raw` to ma
 ```json
 [{"sources":["Author","Auteur"],"destination":"Auteur-merged"},{"sources":["Title","Titre"],"destination":"Titre-merged"},{"sources":["Copyright","Copyright (fr)"],"destination":"Copyright-merged"}]
 ```
+
+Alternatively, the plugin provides per-slot fields in the plugin settings for easier editing without JSON:
+
+- `merge_map_1_sources`, `merge_map_1_destination`
+- `merge_map_2_sources`, `merge_map_2_destination`
+- `merge_map_3_sources`, `merge_map_3_destination`
+- `merge_map_4_sources`, `merge_map_4_destination`
+- `merge_map_5_sources`, `merge_map_5_destination`
+
+Use a comma-separated list of source names in each `merge_map_X_sources` (for example: `Author,Auteur`) and the destination field name in the corresponding `merge_map_X_destination`. Empty slots are ignored.
