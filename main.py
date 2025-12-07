@@ -30,6 +30,7 @@ class PluginParams(BaseModel):
     # introspects plugin BaseModel fields). The attribute is created at
     # runtime in the plugin instance (`self.params.merge_mappings = []`).
     merge_source_missing_label: str = "[merge-source not provided]"
+    merge_mappings_raw: str = "[]"
 
 
 class PanopticDatabasesMerger(APlugin):
@@ -44,6 +45,16 @@ class PanopticDatabasesMerger(APlugin):
         # to avoid core introspection issues). Plugins can set this via the
         # UI as a list of dicts that conform to MergeMapping at runtime.
         self.merge_mappings: list[MergeMapping] = []
+        # try to initialise merge_mappings from raw param if present
+        try:
+            import json
+
+            parsed = json.loads(self.params.merge_mappings_raw or "[]")
+            self.merge_mappings = [MergeMapping(**m) for m in parsed if isinstance(m, dict)]
+        except Exception:
+            # leave empty list on parse error
+            self.merge_mappings = []
+
 
         # Ensure every imported instance has a merge-source tag (or the default placeholder).
         self.project.on_instance_import(self._on_instance_import)
@@ -90,4 +101,21 @@ class PanopticDatabasesMerger(APlugin):
             merge_validated_flag=self.params.merge_validated_flag,
             missing_label=self.params.merge_source_missing_label,
         )
+
+    async def update_params(self, params: any):
+        """
+        Called when plugin parameters are updated from the UI.
+        We override to parse `merge_mappings_raw` (JSON) into `self.merge_mappings`.
+        """
+        await super().update_params(params)
+        # parse mappings if provided
+        try:
+            import json
+
+            raw = getattr(self.params, 'merge_mappings_raw', '[]') or '[]'
+            parsed = json.loads(raw)
+            self.merge_mappings = [MergeMapping(**m) for m in parsed if isinstance(m, dict)]
+        except Exception:
+            # keep previous value on error
+            pass
 
