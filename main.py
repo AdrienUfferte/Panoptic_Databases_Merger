@@ -184,31 +184,93 @@ class PanopticDatabasesMerger(APlugin):
         """
         print(f"[PanopticDatabasesMerger] update_params called with: {params}")
         await super().update_params(params)
-        # parse mappings if provided
+
+        # We will parse both `merge_mappings_raw` (JSON) and any per-slot fields,
+        # merge them (deduplicate) and then keep both representations in sync.
+        need_persist = False
         try:
             import json
+
+            # 1) Start from JSON raw if present
             raw = getattr(self.params, 'merge_mappings_raw', '[]') or '[]'
             print(f"[PanopticDatabasesMerger] Parsing merge_mappings_raw in update_params: {raw}")
-            parsed = json.loads(raw)
-            self.merge_mappings = [MergeMapping(**m) for m in parsed if isinstance(m, dict)]
-            print(f"[PanopticDatabasesMerger] Parsed {len(self.merge_mappings)} merge mappings in update_params from JSON.")
-        except Exception as e:
-            print(f"[PanopticDatabasesMerger] Failed to parse merge_mappings_raw in update_params: {e}")
-            # keep previous value on error
+            parsed = []
+            try:
+                parsed = json.loads(raw)
+            except Exception as e:
+                print(f"[PanopticDatabasesMerger] Warning: invalid JSON in merge_mappings_raw: {e}")
 
-        # Parse any per-slot mapping fields as well and append
-        try:
-            added = 0
-            for i in range(1, 26):
-                src_field = getattr(self.params, f"merge_map_{i}_sources", "")
-                dst_field = getattr(self.params, f"merge_map_{i}_destination", "")
-                if src_field and dst_field:
-                    sources = [s.strip() for s in src_field.split(',') if s.strip()]
-                    if sources:
-                        self.merge_mappings.append(MergeMapping(sources=sources, destination=dst_field))
-                        added += 1
-            if added:
-                print(f"[PanopticDatabasesMerger] Added {added} merge mappings from per-slot fields in update_params.")
+            mappings: list[MergeMapping] = []
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, dict):
+                        try:
+                            mappings.append(MergeMapping(**item))
+                        except Exception as e:
+                            print(f"[PanopticDatabasesMerger] Skipping invalid mapping from JSON: {e}")
+
+            # 2) Parse per-slot fields and append
+            try:
+                for i in range(1, 26):
+                    src_field = getattr(self.params, f"merge_map_{i}_sources", "")
+                    dst_field = getattr(self.params, f"merge_map_{i}_destination", "")
+                    if src_field and dst_field:
+                        sources = [s.strip() for s in src_field.split(',') if s.strip()]
+                        if sources:
+                            mappings.append(MergeMapping(sources=sources, destination=dst_field))
+            except Exception as e:
+                print(f"[PanopticDatabasesMerger] Failed to parse per-slot merge mappings in update_params: {e}")
+
+            # 3) Deduplicate while preserving order
+            seen = set()
+            canonical: list[MergeMapping] = []
+            for m in mappings:
+                key = (tuple(m.sources), m.destination)
+                if key not in seen:
+                    seen.add(key)
+                    canonical.append(m)
+
+            self.merge_mappings = canonical
+            print(f"[PanopticDatabasesMerger] Consolidated {len(self.merge_mappings)} unique merge mappings in update_params.")
+
+            # 4) Ensure merge_mappings_raw reflects the canonical mapping list
+            canonical_raw = json.dumps([
+                {"sources": mm.sources, "destination": mm.destination} for mm in self.merge_mappings
+            ])
+            if canonical_raw != (getattr(self.params, 'merge_mappings_raw', None) or '[]'):
+                print("[PanopticDatabasesMerger] Updating merge_mappings_raw to reflect per-slot changes.")
+                self.params.merge_mappings_raw = canonical_raw
+                need_persist = True
+
+            # 5) Also populate per-slot fields from canonical list so the UI shows them
+            try:
+                for i in range(1, 26):
+                    if i <= len(self.merge_mappings):
+                        mm = self.merge_mappings[i - 1]
+                        src_val = ','.join(mm.sources)
+                        dst_val = mm.destination
+                    else:
+                        src_val = ''
+                        dst_val = ''
+                    src_attr = f"merge_map_{i}_sources"
+                    dst_attr = f"merge_map_{i}_destination"
+                    if getattr(self.params, src_attr, '') != src_val:
+                        setattr(self.params, src_attr, src_val)
+                        need_persist = True
+                    if getattr(self.params, dst_attr, '') != dst_val:
+                        setattr(self.params, dst_attr, dst_val)
+                        need_persist = True
+            except Exception as e:
+                print(f"[PanopticDatabasesMerger] Failed while populating per-slot fields: {e}")
+
+            # Persist changes back to the plugin params so the UI reflects them
+            if need_persist:
+                try:
+                    print("[PanopticDatabasesMerger] Persisting synchronized plugin params back to core.")
+                    await super().update_params(self.params.dict())
+                except Exception as e:
+                    print(f"[PanopticDatabasesMerger] Failed to persist synchronized params: {e}")
+
         except Exception as e:
-            print(f"[PanopticDatabasesMerger] Failed to parse per-slot merge mappings in update_params: {e}")
+            print(f"[PanopticDatabasesMerger] Unexpected error in update_params sync: {e}")
 
