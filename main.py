@@ -241,6 +241,8 @@ class PanopticDatabasesMerger(APlugin):
                 print("[PanopticDatabasesMerger] Updating merge_mappings_raw to reflect per-slot changes.")
                 self.params.merge_mappings_raw = canonical_raw
                 need_persist = True
+            
+            print(f"[PanopticDatabasesMerger] Updated merge_mappings_raw: {self.params.merge_mappings_raw}")
 
             # 5) Also populate per-slot fields from canonical list so the UI shows them
             try:
