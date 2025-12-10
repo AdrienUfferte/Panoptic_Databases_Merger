@@ -233,12 +233,8 @@ class PanopticDatabasesMerger(APlugin):
         """
         logger.info("update_params called with: %s", params)
 
-        # Build a merged params dict: start from current params, overlay incoming values
-        try:
-            current = self.params.dict() if self.params is not None else {}
-        except Exception:
-            # fallback if self.params isn't a BaseModel yet
-            current = {}
+        # Build a merged params dict for persistence
+        current = {}
 
         incoming = {}
         if isinstance(params, dict):
@@ -252,40 +248,54 @@ class PanopticDatabasesMerger(APlugin):
         merged = dict(current)
         merged.update(incoming)
         logger.debug("Built merged params: current_keys=%d incoming_keys=%d total_keys=%d", len(current), len(incoming), len(merged))
-        try:
-            changed_keys = [k for k in merged.keys() if merged.get(k) != current.get(k)]
-            logger.debug("Changed keys after merge (sample): %s", changed_keys[:20])
-        except Exception:
-            logger.debug("Unable to compute changed keys")
 
-        # Parse and canonicalize mappings from both JSON and per-slot fields
+        # IMPORTANT: Per user's request, only use incoming values as the source-of-truth
+        # for canonicalizing merge mappings. Do NOT consult `self.params`/current values
+        # when deciding the canonical mapping list.
         try:
             import json
 
             mappings: list[MergeMapping] = []
+            source_chosen = 'none'
 
-            # parse JSON raw if present in merged
-            raw = merged.get('merge_mappings_raw', '[]') or '[]'
-            try:
-                parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    for item in parsed:
-                        if isinstance(item, dict):
-                            try:
-                                mappings.append(MergeMapping(**item))
-                            except Exception:
-                                logger.exception("Skipping invalid mapping from JSON: %s", item)
-            except Exception:
-                logger.exception("Invalid JSON in merge_mappings_raw: %s", raw)
+            # 1) Prefer incoming JSON raw if present and parseable
+            raw_incoming = (incoming.get('merge_mappings_raw') if isinstance(incoming, dict) else None) or ''
+            if raw_incoming:
+                try:
+                    parsed = json.loads(raw_incoming)
+                    if isinstance(parsed, list):
+                        for item in parsed:
+                            if isinstance(item, dict):
+                                try:
+                                    mappings.append(MergeMapping(**item))
+                                except Exception:
+                                    logger.exception("Skipping invalid mapping from incoming JSON: %s", item)
+                        source_chosen = 'merge_mappings_raw'
+                    else:
+                        logger.warning("Incoming merge_mappings_raw did not parse to a list; ignoring")
+                except Exception:
+                    logger.exception("Invalid JSON in incoming merge_mappings_raw; ignoring")
 
-            # parse per-slot fields from merged
-            for i in range(1, 26):
-                src_field = merged.get(f"merge_map_{i}_sources", "")
-                dst_field = merged.get(f"merge_map_{i}_destination", "")
-                if src_field and dst_field:
-                    sources = [s.strip() for s in src_field.split(',') if s.strip()]
-                    if sources:
-                        mappings.append(MergeMapping(sources=sources, destination=dst_field))
+            # 2) If no valid incoming JSON, fall back to incoming per-slot fields
+            if source_chosen == 'none':
+                slot_added = 0
+                for i in range(1, 26):
+                    src_field = (incoming.get(f"merge_map_{i}_sources") if isinstance(incoming, dict) else None) or ''
+                    dst_field = (incoming.get(f"merge_map_{i}_destination") if isinstance(incoming, dict) else None) or ''
+                    if src_field and dst_field:
+                        try:
+                            sources = [s.strip() for s in src_field.split(',') if s.strip()]
+                            if sources:
+                                mappings.append(MergeMapping(sources=sources, destination=dst_field))
+                                slot_added += 1
+                        except Exception:
+                            logger.exception("Invalid incoming per-slot mapping at slot %d, skipping (sources=%s destination=%s)", i, src_field, dst_field)
+                if slot_added:
+                    source_chosen = 'per-slot'
+
+            # 3) If neither provided, canonical list is empty (do not use existing self.params)
+            if source_chosen == 'none':
+                logger.info("No incoming mapping configuration provided; canonical mappings will be empty.")
 
             # deduplicate while preserving order
             seen = set()
@@ -296,15 +306,16 @@ class PanopticDatabasesMerger(APlugin):
                     seen.add(key)
                     canonical.append(m)
 
+            # Set runtime mappings
             self.merge_mappings = canonical
+            logger.info("Canonicalized %d mappings from source: %s", len(self.merge_mappings), source_chosen)
 
-            # update merged dict: canonical JSON
+            # Overwrite mapping-related fields in merged to reflect canonical list
             canonical_raw = json.dumps([
                 {"sources": mm.sources, "destination": mm.destination} for mm in self.merge_mappings
             ])
             merged['merge_mappings_raw'] = canonical_raw
 
-            # populate per-slot fields in merged
             for i in range(1, 26):
                 if i <= len(self.merge_mappings):
                     mm = self.merge_mappings[i - 1]
